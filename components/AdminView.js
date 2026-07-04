@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { SERVICES, HOURS, MONTH_NAMES } from '../lib/constants';
 import { toKey, fmtTime, bookingColor } from '../lib/utils';
-import { Badge, CalendarGrid, navBtn, smGreenBtn, smRedBtn, smGrayBtn } from './UI';
+import { Badge, CalendarGrid, navBtn, smGreenBtn, smRedBtn, smGrayBtn, inputStyle, primaryBtn, ghostBtn } from './UI';
 
 export default function AdminView({ bookings, setBookings, blocked, setBlocked, notifs, toast }) {
   const today = new Date();
@@ -10,6 +10,8 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
   const [day, setDay] = useState(today.getDate());
   const [tab, setTab] = useState('calendar');
   const [blockMode, setBlockMode] = useState(false);
+  const [addMode, setAddMode]     = useState(false);
+  const [newBooking, setNewBooking] = useState({ name: '', phone: '', note: '', serviceId: 'ride', hour: 9, payment: 'cash', price: '' });
 
   const key        = toKey(yr, mo, day);
   const dayEntries = bookings[key] || [];
@@ -67,6 +69,28 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
       return { ...prev, [bkey]: arr };
     });
     toast('🎉 Marked complete');
+  }
+
+  function saveNewBooking() {
+    if (!newBooking.name.trim()) { toast('Enter a name'); return; }
+    const svc = SERVICES.find(s => s.id === newBooking.serviceId);
+    const entry = {
+      clientName: newBooking.name,
+      phone: newBooking.phone,
+      note: newBooking.note,
+      serviceId: newBooking.serviceId,
+      hour: parseInt(newBooking.hour),
+      price: parseFloat(newBooking.price) || svc?.basePrice || 20,
+      status: 'approved',
+      bid: false,
+      waitlist: false,
+      payment: newBooking.payment,
+      addedByAdmin: true,
+    };
+    setBookings(prev => ({ ...prev, [key]: [...(prev[key] || []), entry] }));
+    setAddMode(false);
+    setNewBooking({ name: '', phone: '', note: '', serviceId: 'ride', hour: 9, payment: 'cash', price: '' });
+    toast('✅ Booking added!');
   }
 
   const prevMo = () => { if (mo === 0) { setYr(y => y - 1); setMo(11); } else setMo(m => m - 1); setDay(1); };
@@ -138,11 +162,95 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
           <div style={{ background: '#fff', borderRadius: 16, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <span style={{ fontWeight: 700, fontSize: 15 }}>{MONTH_NAMES[mo]} {day}</span>
-              <button
-                onClick={() => setBlockMode(b => !b)}
-                style={{ padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, background: blockMode ? '#fef2f2' : '#f8fafc', color: blockMode ? '#dc2626' : '#475569', fontWeight: 700 }}
-              >{blockMode ? '✕ Done blocking' : '🚫 Block time'}</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => { setAddMode(a => !a); setBlockMode(false); }}
+                  style={{ padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, background: addMode ? '#111827' : '#f0fdf4', color: addMode ? '#fff' : '#16a34a', fontWeight: 700 }}
+                >
+                  {addMode ? '✕ Cancel' : '+ Add Booking'}
+                </button>
+                <button
+                  onClick={() => { setBlockMode(b => !b); setAddMode(false); }}
+                  style={{ padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, background: blockMode ? '#fef2f2' : '#f8fafc', color: blockMode ? '#dc2626' : '#475569', fontWeight: 700 }}
+                >
+                  {blockMode ? '✕ Done' : '🚫 Block'}
+                </button>
+              </div>
             </div>
+
+            {/* ── ADD BOOKING FORM ── */}
+            {addMode && (
+              <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 12, padding: 16, marginBottom: 14 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#15803d', marginBottom: 12 }}>Add booking for {MONTH_NAMES[mo]} {day}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <input
+                    placeholder="Customer name *"
+                    value={newBooking.name}
+                    onChange={e => setNewBooking(b => ({ ...b, name: e.target.value }))}
+                    style={inputStyle}
+                  />
+                  <input
+                    placeholder="Phone number"
+                    value={newBooking.phone}
+                    onChange={e => setNewBooking(b => ({ ...b, phone: e.target.value }))}
+                    style={inputStyle}
+                  />
+                  <select
+                    value={newBooking.serviceId}
+                    onChange={e => {
+                      const svc = SERVICES.find(s => s.id === e.target.value);
+                      setNewBooking(b => ({ ...b, serviceId: e.target.value, price: svc?.basePrice || '' }));
+                    }}
+                    style={{ ...inputStyle, background: '#fff' }}
+                  >
+                    {SERVICES.map(s => (
+                      <option key={s.id} value={s.id}>{s.icon} {s.label}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={newBooking.hour}
+                    onChange={e => setNewBooking(b => ({ ...b, hour: e.target.value }))}
+                    style={{ ...inputStyle, background: '#fff' }}
+                  >
+                    {HOURS.map(h => (
+                      <option key={h} value={h}>{fmtTime(h)}</option>
+                    ))}
+                  </select>
+                  <input
+                    placeholder="Price ($)"
+                    type="number"
+                    value={newBooking.price}
+                    onChange={e => setNewBooking(b => ({ ...b, price: e.target.value }))}
+                    style={inputStyle}
+                  />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => setNewBooking(b => ({ ...b, payment: 'cash' }))}
+                      style={{ flex: 1, padding: '9px', borderRadius: 10, border: `2px solid ${newBooking.payment === 'cash' ? '#16a34a' : '#e2e8f0'}`, background: newBooking.payment === 'cash' ? '#f0fdf4' : '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', color: newBooking.payment === 'cash' ? '#16a34a' : '#475569' }}
+                    >💵 Cash</button>
+                    <button
+                      type="button"
+                      onClick={() => setNewBooking(b => ({ ...b, payment: 'venmo' }))}
+                      style={{ flex: 1, padding: '9px', borderRadius: 10, border: `2px solid ${newBooking.payment === 'venmo' ? '#008CFF' : '#e2e8f0'}`, background: newBooking.payment === 'venmo' ? '#eff8ff' : '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', color: newBooking.payment === 'venmo' ? '#008CFF' : '#475569' }}
+                    >💙 Venmo</button>
+                  </div>
+                  <textarea
+                    placeholder="Notes..."
+                    value={newBooking.note}
+                    onChange={e => setNewBooking(b => ({ ...b, note: e.target.value }))}
+                    rows={2}
+                    style={{ ...inputStyle, resize: 'vertical' }}
+                  />
+                  <button
+                    onClick={saveNewBooking}
+                    style={{ ...primaryBtn, width: '100%', background: '#16a34a' }}
+                  >
+                    ✓ Save Booking
+                  </button>
+                </div>
+              </div>
+            )}
 
             {HOURS.map(h => {
               const entry = dayEntries.find(b => b.hour === h && b.status !== 'cancelled');
@@ -168,6 +276,7 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
                         <span style={{ fontSize: 14 }}>{svc?.icon}</span>
                         <span style={{ fontWeight: 700, fontSize: 13, color: bookingColor(entry) }}>{entry.clientName}</span>
                         <Badge color={bookingColor(entry)} small>{entry.status}</Badge>
+                        {entry.addedByAdmin && <Badge color="#64748b" small>📞 walk-in</Badge>}
                         <span style={{ marginLeft: 'auto', fontWeight: 700, color: '#16a34a', fontSize: 13 }}>
                           {entry.status !== 'cancelled' ? `$${entry.price}` : ''}
                         </span>
@@ -272,6 +381,7 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
                     <div style={{ fontSize: 11, color: '#64748b' }}>{k} {fmtTime(b.hour)} · {svc?.label}</div>
                     {b.note && <div style={{ fontSize: 11, color: '#94a3b8' }}>"{b.note}"</div>}
                     {b.payment && <div style={{ fontSize: 10, color: '#64748b' }}>{b.payment === 'venmo' ? '💙 Venmo' : '💵 Cash'}</div>}
+                    {b.addedByAdmin && <div style={{ fontSize: 10, color: '#64748b' }}>📞 Added by you</div>}
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     {b.status !== 'cancelled' && <div style={{ fontWeight: 800, color: '#16a34a', fontSize: 13 }}>${b.price}</div>}
@@ -285,4 +395,4 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
       )}
     </div>
   );
-}
+        }
