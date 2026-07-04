@@ -41,6 +41,15 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
     toast('❌ Booking declined');
   }
 
+  function cancelBooking(bkey, idx) {
+    setBookings(prev => {
+      const arr = [...(prev[bkey] || [])];
+      arr[idx] = { ...arr[idx], status: 'cancelled' };
+      return { ...prev, [bkey]: arr };
+    });
+    toast('🚫 Booking cancelled');
+  }
+
   function acceptBid(bkey, bidIdx, origIdx) {
     setBookings(prev => {
       const arr = [...(prev[bkey] || [])];
@@ -64,11 +73,18 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
   const nextMo = () => { if (mo === 11) { setYr(y => y + 1); setMo(0); } else setMo(m => m + 1); setDay(1); };
 
   const totalEarned = Object.values(bookings).flat()
-    .filter(b => b.status === 'completed' || b.status === 'approved')
+    .filter(b => (b.status === 'completed' || b.status === 'approved') && b.status !== 'cancelled')
     .reduce((s, b) => s + (b.price || 0), 0);
+
+  function paymentLabel(b) {
+    if (!b.payment) return '';
+    return b.payment === 'venmo' ? ' · 💙 Venmo' : ' · 💵 Cash';
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
         {[
           { label: 'Pending',  val: pending.length, color: '#d97706' },
@@ -82,12 +98,23 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
         ))}
       </div>
 
+      {/* Tabs */}
       <div style={{ display: 'flex', gap: 8 }}>
-        {[['calendar','📅 Calendar'],['requests',`🔔 Requests${pending.length ? ` (${pending.length})` : ''}`],['all','📋 All Jobs']].map(([t,l]) => (
-          <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '9px 4px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 12, background: tab === t ? '#111827' : '#fff', color: tab === t ? '#fff' : '#475569', fontWeight: 700, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>{l}</button>
+        {[
+          ['calendar', '📅 Calendar'],
+          ['requests', `🔔 Requests${pending.length ? ` (${pending.length})` : ''}`],
+          ['all', '📋 All Jobs'],
+        ].map(([t, l]) => (
+          <button key={t} onClick={() => setTab(t)} style={{
+            flex: 1, padding: '9px 4px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 12,
+            background: tab === t ? '#111827' : '#fff',
+            color: tab === t ? '#fff' : '#475569',
+            fontWeight: 700, boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+          }}>{l}</button>
         ))}
       </div>
 
+      {/* ── CALENDAR TAB ── */}
       {tab === 'calendar' && (
         <>
           <div style={{ background: '#fff', borderRadius: 16, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
@@ -107,19 +134,33 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
             </div>
           </div>
 
+          {/* Day detail */}
           <div style={{ background: '#fff', borderRadius: 16, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <span style={{ fontWeight: 700, fontSize: 15 }}>{MONTH_NAMES[mo]} {day}</span>
-              <button onClick={() => setBlockMode(b => !b)} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, background: blockMode ? '#fef2f2' : '#f8fafc', color: blockMode ? '#dc2626' : '#475569', fontWeight: 700 }}>{blockMode ? '✕ Done blocking' : '🚫 Block time'}</button>
+              <button
+                onClick={() => setBlockMode(b => !b)}
+                style={{ padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, background: blockMode ? '#fef2f2' : '#f8fafc', color: blockMode ? '#dc2626' : '#475569', fontWeight: 700 }}
+              >{blockMode ? '✕ Done blocking' : '🚫 Block time'}</button>
             </div>
+
             {HOURS.map(h => {
               const entry = dayEntries.find(b => b.hour === h && b.status !== 'cancelled');
               const blk   = dayBlocked.includes(h);
               const svc   = entry ? SERVICES.find(s => s.id === entry.serviceId) : null;
               const bids  = dayEntries.filter(b => b.hour === h && b.bid && b.status === 'pending');
               return (
-                <div key={h} onClick={() => blockMode && !entry && toggleBlock(h)}
-                  style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 10px', borderRadius: 9, marginBottom: 4, background: entry ? (svc?.color + '12') : blk ? '#fef2f2' : '#f8fafc', border: `1.5px solid ${entry ? (svc?.color + '40') : blk ? '#fecaca' : '#e2e8f0'}`, cursor: blockMode && !entry ? 'pointer' : 'default' }}>
+                <div
+                  key={h}
+                  onClick={() => blockMode && !entry && toggleBlock(h)}
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 10px',
+                    borderRadius: 9, marginBottom: 4,
+                    background: entry ? (svc?.color + '12') : blk ? '#fef2f2' : '#f8fafc',
+                    border: `1.5px solid ${entry ? (svc?.color + '40') : blk ? '#fecaca' : '#e2e8f0'}`,
+                    cursor: blockMode && !entry ? 'pointer' : 'default',
+                  }}
+                >
                   <span style={{ fontSize: 12, color: '#94a3b8', width: 36, flexShrink: 0, paddingTop: 2 }}>{fmtTime(h)}</span>
                   {entry ? (
                     <div style={{ flex: 1 }}>
@@ -127,10 +168,15 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
                         <span style={{ fontSize: 14 }}>{svc?.icon}</span>
                         <span style={{ fontWeight: 700, fontSize: 13, color: bookingColor(entry) }}>{entry.clientName}</span>
                         <Badge color={bookingColor(entry)} small>{entry.status}</Badge>
-                        <span style={{ marginLeft: 'auto', fontWeight: 700, color: '#16a34a', fontSize: 13 }}>${entry.price}</span>
+                        <span style={{ marginLeft: 'auto', fontWeight: 700, color: '#16a34a', fontSize: 13 }}>
+                          {entry.status !== 'cancelled' ? `$${entry.price}` : ''}
+                        </span>
                       </div>
-                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{svc?.label}{entry.note ? ` · ${entry.note}` : ''}</div>
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                        {svc?.label}{entry.note ? ` · ${entry.note}` : ''}{paymentLabel(entry)}
+                      </div>
                       {entry.phone && <div style={{ fontSize: 11, color: '#94a3b8' }}>{entry.phone}</div>}
+
                       {bids.length > 0 && (
                         <div style={{ marginTop: 6, padding: '8px 10px', background: '#fffbeb', borderRadius: 8, border: '1px solid #fde68a' }}>
                           <div style={{ fontSize: 12, fontWeight: 700, color: '#b45309' }}>💰 Higher bid: ${bids[0].price} from {bids[0].clientName}</div>
@@ -140,6 +186,7 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
                           </div>
                         </div>
                       )}
+
                       {entry.status === 'pending' && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                           <button onClick={() => approveBooking(key, dayEntries.indexOf(entry))} style={smGreenBtn}>Approve</button>
@@ -147,7 +194,12 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
                           <button onClick={() => markComplete(key, dayEntries.indexOf(entry))} style={smGrayBtn}>Done</button>
                         </div>
                       )}
-                      {entry.status === 'approved' && <button onClick={() => markComplete(key, dayEntries.indexOf(entry))} style={{ ...smGrayBtn, marginTop: 6 }}>Mark complete</button>}
+                      {entry.status === 'approved' && (
+                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                          <button onClick={() => markComplete(key, dayEntries.indexOf(entry))} style={smGrayBtn}>Mark complete</button>
+                          <button onClick={() => cancelBooking(key, dayEntries.indexOf(entry))} style={smRedBtn}>Cancel</button>
+                        </div>
+                      )}
                     </div>
                   ) : blk ? (
                     <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -164,6 +216,7 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
         </>
       )}
 
+      {/* ── REQUESTS TAB ── */}
       {tab === 'requests' && (
         <div style={{ background: '#fff', borderRadius: 16, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
           <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14 }}>Pending Requests</div>
@@ -183,6 +236,7 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
                         <div style={{ fontSize: 12, color: '#64748b' }}>{k} at {fmtTime(b.hour)} · {svc?.label}</div>
                         {b.phone && <div style={{ fontSize: 11, color: '#94a3b8' }}>{b.phone}</div>}
                         {b.note && <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>"{b.note}"</div>}
+                        {b.payment && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{b.payment === 'venmo' ? '💙 Venmo' : '💵 Cash'}</div>}
                         {b.bid && <div style={{ fontSize: 12, color: '#d97706', fontWeight: 700, marginTop: 4 }}>💰 Outbid: ${b.price}</div>}
                         {b.waitlist && <div style={{ fontSize: 12, color: '#7c3aed', fontWeight: 700, marginTop: 4 }}>📋 Waitlist</div>}
                       </div>
@@ -200,44 +254,27 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
         </div>
       )}
 
+      {/* ── ALL JOBS TAB ── */}
       {tab === 'all' && (
         <div style={{ background: '#fff', borderRadius: 16, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
           <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14 }}>All Jobs</div>
+          {Object.entries(bookings).flatMap(([k, arr]) => arr).length === 0 && (
+            <div style={{ textAlign: 'center', color: '#94a3b8', padding: '30px 0' }}>No bookings yet</div>
+          )}
           {Object.entries(bookings).flatMap(([k, arr]) =>
             arr.map((b, i) => {
               const svc = SERVICES.find(s => s.id === b.serviceId);
               return (
                 <div key={`${k}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 0', borderBottom: '1px solid #f8fafc' }}>
-                  <span style={{ fontSize: 22 }}>{svc?.icon}</span>
+                  <span style={{ fontSize: 22, opacity: b.status === 'cancelled' ? 0.4 : 1 }}>{svc?.icon}</span>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{b.clientName}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13, textDecoration: b.status === 'cancelled' ? 'line-through' : 'none', color: b.status === 'cancelled' ? '#94a3b8' : '#1e293b' }}>{b.clientName}</div>
                     <div style={{ fontSize: 11, color: '#64748b' }}>{k} {fmtTime(b.hour)} · {svc?.label}</div>
                     {b.note && <div style={{ fontSize: 11, color: '#94a3b8' }}>"{b.note}"</div>}
+                    {b.payment && <div style={{ fontSize: 10, color: '#64748b' }}>{b.payment === 'venmo' ? '💙 Venmo' : '💵 Cash'}</div>}
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: 800, color: '#16a34a', fontSize: 13 }}>${b.price}</div>
-                    <Badge color={bookingColor(b)} small>{b.status}</Badge>
-                  </div>
-                </div>
-              );
-            })
-          ).length === 0
-            ? <div style={{ textAlign: 'center', color: '#94a3b8', padding: '30px 0' }}>No bookings yet</div>
-            : null
-          }
-          {Object.entries(bookings).flatMap(([k, arr]) =>
-            arr.map((b, i) => {
-              const svc = SERVICES.find(s => s.id === b.serviceId);
-              return (
-                <div key={`${k}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 0', borderBottom: '1px solid #f8fafc' }}>
-                  <span style={{ fontSize: 22 }}>{svc?.icon}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{b.clientName}</div>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>{k} {fmtTime(b.hour)} · {svc?.label}</div>
-                    {b.note && <div style={{ fontSize: 11, color: '#94a3b8' }}>"{b.note}"</div>}
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: 800, color: '#16a34a', fontSize: 13 }}>${b.price}</div>
+                    {b.status !== 'cancelled' && <div style={{ fontWeight: 800, color: '#16a34a', fontSize: 13 }}>${b.price}</div>}
                     <Badge color={bookingColor(b)} small>{b.status}</Badge>
                   </div>
                 </div>
