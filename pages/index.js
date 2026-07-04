@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Head from 'next/head';
 import AdminView      from '../components/AdminView';
 import ClientView     from '../components/ClientView';
@@ -7,14 +7,14 @@ import { Toast }      from '../components/UI';
 import { ADMIN_PIN }  from '../lib/constants';
 
 export default function Home() {
-  const [view, setView]           = useState('home');
-  const [bookings, setBookings]   = useState({});
-  const [blocked, setBlocked]     = useState({});
-  const [notifs, setNotifs]       = useState([]);
-  const [toastMsg, setToastMsg]   = useState(null);
-  const [adminOpen, setAdminOpen] = useState(false);
-  const [pin, setPin]             = useState('');
-  const [userPlan, setUserPlan]   = useState('free');
+  const [view, setView]             = useState('home');
+  const [bookings, setBookings]     = useState({});
+  const [blocked, setBlocked]       = useState({});
+  const [notifs, setNotifs]         = useState([]);
+  const [toastMsg, setToastMsg]     = useState(null);
+  const [adminOpen, setAdminOpen]   = useState(false);
+  const [pin, setPin]               = useState('');
+  const [userPlan, setUserPlan]     = useState('free');
   const [showNotifs, setShowNotifs] = useState(false);
 
   function toast(msg) { setToastMsg(msg); }
@@ -45,6 +45,15 @@ export default function Home() {
             ? `📋 Waitlist: ${newest.clientName}`
             : `📬 New booking: ${newest.clientName}`;
           setNotifs(n => [{ id: Date.now(), msg, time: new Date().toLocaleTimeString(), read: false }, ...n]);
+          // Email notification via FormSubmit (free, no account needed)
+          fetch('https://formsubmit.co/ajax/sambo.poole@gmail.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({
+              subject: `Sweet Lou's — New Booking from ${newest.clientName}`,
+              message: `${msg}\nService: ${newest.serviceId}\nPayment: ${newest.payment || 'cash'}\nPhone: ${newest.phone || 'not provided'}\nNote: ${newest.note || 'none'}`,
+            })
+          }).catch(() => {});
         }
       }
       return next;
@@ -64,7 +73,10 @@ export default function Home() {
         <title>Sweet Lou's Services</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
       </Head>
+
       <div style={{ minHeight: '100vh', background: '#f0f4f8' }}>
+
+        {/* ── HEADER ── */}
         <div style={{
           background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '13px 16px',
           position: 'sticky', top: 0, zIndex: 50,
@@ -86,7 +98,9 @@ export default function Home() {
               </div>
             </div>
           </button>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Notification bell */}
             <div style={{ position: 'relative' }}>
               <button
                 onClick={() => setShowNotifs(s => !s)}
@@ -125,6 +139,8 @@ export default function Home() {
                 </div>
               )}
             </div>
+
+            {/* Admin access */}
             {adminOpen ? (
               <button
                 onClick={() => setView(v => v === 'admin' ? 'home' : 'admin')}
@@ -149,6 +165,8 @@ export default function Home() {
             )}
           </div>
         </div>
+
+        {/* ── MAIN CONTENT ── */}
         <div style={{ maxWidth: 480, margin: '0 auto', padding: '16px 14px 90px' }}>
           {view === 'admin' ? (
             <AdminView
@@ -166,6 +184,8 @@ export default function Home() {
             />
           )}
         </div>
+
+        {/* ── BOTTOM NAV ── */}
         {view !== 'admin' && (
           <div style={{
             position: 'fixed', bottom: 0, left: 0, right: 0,
@@ -174,7 +194,7 @@ export default function Home() {
             paddingBottom: 'env(safe-area-inset-bottom, 8px)',
           }}>
             {[
-              { id: 'home', icon: '🏠', label: 'Home' },
+              { id: 'home',       icon: '🏠', label: 'Home'  },
               { id: 'membership', icon: '⭐', label: 'Plans' },
             ].map(t => (
               <button
@@ -193,8 +213,9 @@ export default function Home() {
             ))}
           </div>
         )}
+
         {toastMsg && <Toast msg={toastMsg} onDone={() => setToastMsg(null)} />}
       </div>
     </>
   );
-                  }
+                }
