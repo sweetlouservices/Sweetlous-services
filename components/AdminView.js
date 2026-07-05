@@ -28,10 +28,15 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
   function approveBooking(bkey, idx) {
     setBookings(prev => {
       const arr = [...(prev[bkey] || [])];
-      arr[idx] = { ...arr[idx], status: 'approved' };
-      return { ...prev, [bkey]: arr };
+      const approvedHour = arr[idx].hour;
+      const updated = arr.map((b, i) => {
+        if (i === idx) return { ...b, status: 'approved' };
+        if (b.hour === approvedHour && b.status !== 'cancelled') return { ...b, status: 'cancelled' };
+        return b;
+      });
+      return { ...prev, [bkey]: updated };
     });
-    toast('✅ Booking approved');
+    toast('✅ Approved — others at this time auto-cancelled');
   }
 
   function rejectBooking(bkey, idx) {
@@ -395,4 +400,4 @@ export default function AdminView({ bookings, setBookings, blocked, setBlocked, 
       )}
     </div>
   );
-        }
+          }
