@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Head from 'next/head';
+import { db } from '../lib/firebase';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, getDocs } from 'firebase/firestore';
 import AdminView      from '../components/AdminView';
 import ClientView     from '../components/ClientView';
 import MembershipView from '../components/MembershipView';
@@ -16,6 +18,35 @@ export default function Home() {
   const [pin, setPin]               = useState('');
   const [userPlan, setUserPlan]     = useState('free');
   const [showNotifs, setShowNotifs] = useState(false);
+  const [loading, setLoading]       = useState(true);
+
+  // ── Load bookings from Firebase in real time ──
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'bookings'), snapshot => {
+      const data = {};
+      snapshot.forEach(docSnap => {
+        const d = docSnap.data();
+        if (!data[d.dateKey]) data[d.dateKey] = [];
+        data[d.dateKey].push({ ...d, _id: docSnap.id });
+      });
+      setBookings(data);
+      setLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  // ── Load blocked slots from Firebase in real time ──
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'blocked'), snapshot => {
+      const data = {};
+      snapshot.forEach(docSnap => {
+        const d = docSnap.data();
+        data[d.dateKey] = d.hours || [];
+      });
+      setBlocked(data);
+    });
+    return () => unsub();
+  }, []);
 
   function toast(msg) { setToastMsg(msg); }
 
@@ -30,33 +61,45 @@ export default function Home() {
     }
   }
 
-  function handleSetBookings(updater) {
-    setBookings(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      const prevFlat = Object.values(prev).flat().length;
-      const nextFlat = Object.values(next).flat().length;
-      if (nextFlat > prevFlat) {
-        const allNew = Object.values(next).flat();
-        const newest = allNew[allNew.length - 1];
-        if (newest) {
-          const msg = newest.bid
-            ? `💰 New bid from ${newest.clientName} — $${newest.price}`
-            : newest.waitlist
-            ? `📋 Waitlist: ${newest.clientName}`
-            : `📬 New booking: ${newest.clientName}`;
+  // ── Save booking to Firebase ──
+  async function handleSetBookings(updater) {
+    const prev = bookings;
+    const next = typeof updater === 'function' ? updater(prev) : updater;
+
+    // Find new or changed entries
+    Object.entries(next).forEach(async ([dateKey, entries]) => {
+      entries.forEach(async (entry) => {
+        const id = entry._id || `${dateKey}-${entry.hour}-${Date.now()}`;
+        await setDoc(doc(db, 'bookings', id), { ...entry, dateKey, _id: id });
+
+        // Notify on new booking
+        const prevEntries = prev[dateKey] || [];
+        if (!entry._id && prevEntries.length < entries.length) {
+          const msg = entry.bid
+            ? `💰 New bid from ${entry.clientName} — $${entry.price}`
+            : entry.waitlist
+            ? `📋 Waitlist: ${entry.clientName}`
+            : `📬 New booking: ${entry.clientName}`;
           setNotifs(n => [{ id: Date.now(), msg, time: new Date().toLocaleTimeString(), read: false }, ...n]);
-          // Email notification via FormSubmit (free, no account needed)
+          // Email notification
           fetch('https://formsubmit.co/ajax/sambo.poole@gmail.com', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             body: JSON.stringify({
-              subject: `Sweet Lou's — New Booking from ${newest.clientName}`,
-              message: `${msg}\nService: ${newest.serviceId}\nPayment: ${newest.payment || 'cash'}\nPhone: ${newest.phone || 'not provided'}\nNote: ${newest.note || 'none'}`,
+              subject: `Sweet Lou's — New Booking from ${entry.clientName}`,
+              message: `${msg}\nService: ${entry.serviceId}\nPayment: ${entry.payment || 'cash'}\nPhone: ${entry.phone || 'not provided'}\nNote: ${entry.note || 'none'}`,
             })
           }).catch(() => {});
         }
-      }
-      return next;
+      });
+    });
+  }
+
+  // ── Save blocked slots to Firebase ──
+  async function handleSetBlocked(updater) {
+    const next = typeof updater === 'function' ? updater(blocked) : updater;
+    Object.entries(next).forEach(async ([dateKey, hours]) => {
+      await setDoc(doc(db, 'blocked', dateKey), { dateKey, hours });
     });
   }
 
@@ -66,6 +109,15 @@ export default function Home() {
     setNotifs(n => n.map(x => ({ ...x, read: true })));
     setShowNotifs(false);
   }
+
+  if (loading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f4f8' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>⚡</div>
+        <div style={{ fontWeight: 700, color: '#64748b' }}>Loading Sweet Lou's...</div>
+      </div>
+    </div>
+  );
 
   return (
     <>
@@ -100,7 +152,6 @@ export default function Home() {
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* Notification bell */}
             <div style={{ position: 'relative' }}>
               <button
                 onClick={() => setShowNotifs(s => !s)}
@@ -140,7 +191,6 @@ export default function Home() {
               )}
             </div>
 
-            {/* Admin access */}
             {adminOpen ? (
               <button
                 onClick={() => setView(v => v === 'admin' ? 'home' : 'admin')}
@@ -171,7 +221,7 @@ export default function Home() {
           {view === 'admin' ? (
             <AdminView
               bookings={bookings} setBookings={handleSetBookings}
-              blocked={blocked} setBlocked={setBlocked}
+              blocked={blocked} setBlocked={handleSetBlocked}
               notifs={notifs} toast={toast}
             />
           ) : view === 'membership' ? (
@@ -218,4 +268,4 @@ export default function Home() {
       </div>
     </>
   );
-                }
+                                 }
