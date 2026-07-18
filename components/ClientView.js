@@ -379,4 +379,4 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
       })()}
     </div>
   );
-        }
+          }
