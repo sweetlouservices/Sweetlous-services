@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { SERVICES, HOURS, MONTH_NAMES, BOOKING_LIMIT } from '../lib/constants';
-import { toKey, fmtTime, getDays, getFirst } from '../lib/utils';
-import { navBtn, primaryBtn, ghostBtn, inputStyle } from './UI';
+import { toKey, fmtTime, getDays, getFirst, dayStatus } from '../lib/utils';
+import { navBtn, primaryBtn, ghostBtn, inputStyle, Badge } from './UI';
 
 export default function ClientView({ bookings, setBookings, blocked, toast, userPlan, setView }) {
   const today = new Date();
@@ -24,6 +24,14 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
   maxDate.setDate(maxDate.getDate() + bookingLimit);
 
   function isDayBookable(y, m, d) {
+    const date = new Date(y, m, d);
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return date >= todayStart && date <= maxDate;
+  }
+
+  function isDayVisible(y, m, d) {
+    // Free users see colors only within 30 days, VIP sees everything
+    if (userPlan === 'vip') return true;
     const date = new Date(y, m, d);
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     return date >= todayStart && date <= maxDate;
@@ -115,6 +123,7 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
+      {/* ── HOME ── */}
       {step === 'home' && (
         <>
           <div style={{ background: 'linear-gradient(135deg, #111827 0%, #1e3a5f 100%)', borderRadius: 20, padding: '28px 20px', color: '#fff' }}>
@@ -166,19 +175,25 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
             })}
           </div>
 
-          <div style={{ background: '#fff', borderRadius: 14, padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 20 }}>📅</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 13 }}>{userPlan === 'vip' ? 'Book up to 1 year in advance' : 'Book up to 30 days out'}</div>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>{userPlan === 'vip' ? 'VIP full year access' : 'Upgrade to VIP for full year access'}</div>
+          {/* Availability teaser with View Calendar */}
+          <div style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Availability at a glance</div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+              {[['#22c55e','Open'],['#facc15','Filling'],['#fb923c','Busy'],['#ef4444','Full']].map(([c,l]) => (
+                <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, display: 'block' }} />
+                  <span style={{ fontSize: 11, color: '#64748b' }}>{l}</span>
+                </div>
+              ))}
             </div>
-            {userPlan !== 'vip' && (
-              <button onClick={() => setView('membership')} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#d97706', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>Go VIP</button>
-            )}
+            <button onClick={() => setStep('calendar')} style={{ width: '100%', padding: '9px', borderRadius: 10, border: 'none', background: '#111827', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              View Calendar →
+            </button>
           </div>
         </>
       )}
 
+      {/* ── CALENDAR ── */}
       {step === 'calendar' && (
         <>
           {svc && (
@@ -197,6 +212,8 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
               <span style={{ fontWeight: 800, fontSize: 16 }}>{MONTH_NAMES[mo]} {yr}</span>
               <button onClick={nextMo} style={navBtn}>›</button>
             </div>
+
+            {/* Calendar grid with color dots for visible days */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 3 }}>
               {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
                 <div key={d} style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, textAlign: 'center', paddingBottom: 6 }}>{d}</div>
@@ -205,36 +222,64 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
               {Array.from({ length: getDays(yr, mo) }, (_, i) => {
                 const d = i + 1;
                 const bookable = isDayBookable(yr, mo, d);
+                const visible  = isDayVisible(yr, mo, d);
                 const sel = d === day;
                 const isT = d === today.getDate() && mo === today.getMonth() && yr === today.getFullYear();
+                const k = toKey(yr, mo, d);
+                const st = visible ? dayStatus(k, bookings, blocked) : null;
+                const isPast = new Date(yr, mo, d) < new Date(today.getFullYear(), today.getMonth(), today.getDate());
                 return (
                   <div key={d}
                     onClick={() => {
-                      if (!bookable) { if (userPlan !== 'vip') toast('⭐ Upgrade to VIP to book further in advance'); return; }
+                      if (isPast) return;
+                      if (!bookable) { toast('⭐ Upgrade to VIP to book this date'); return; }
                       setDay(d); setStep('time'); setHour(null);
                     }}
                     style={{
                       padding: '7px 0 5px', borderRadius: 10, textAlign: 'center',
-                      cursor: bookable ? 'pointer' : 'not-allowed',
+                      cursor: (!isPast && bookable) ? 'pointer' : 'default',
                       background: sel ? '#111827' : isT ? '#f0f9ff' : 'transparent',
-                      color: sel ? '#fff' : !bookable ? '#cbd5e1' : '#1e293b',
+                      color: sel ? '#fff' : (isPast || !visible) ? '#cbd5e1' : '#1e293b',
                       fontWeight: sel ? 800 : isT ? 700 : 400,
-                      fontSize: 13, opacity: bookable ? 1 : 0.35,
+                      fontSize: 13,
+                      opacity: isPast ? 0.3 : 1,
                     }}>
                     {d}
+                    {/* Show color dot only for visible days */}
+                    {visible && !isPast && st && (
+                      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 3 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: sel ? '#fff' : st.dot, display: 'block' }} />
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
+
+            {/* Legend */}
+            <div style={{ display: 'flex', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
+              {[['#22c55e','Open'],['#facc15','Filling'],['#fb923c','Busy'],['#ef4444','Full']].map(([c,l]) => (
+                <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, display: 'block' }} />
+                  <span style={{ fontSize: 11, color: '#64748b' }}>{l}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* VIP nudge below legend */}
             {userPlan !== 'vip' && (
-              <div style={{ marginTop: 12, padding: '8px 12px', background: '#fffbeb', borderRadius: 8, border: '1px solid #fde68a' }}>
-                <div style={{ fontSize: 11, color: '#b45309' }}>⭐ Grayed out dates require VIP to book</div>
+              <div style={{ marginTop: 12, padding: '10px 12px', background: '#fffbeb', borderRadius: 8, border: '1px solid #fde68a' }}>
+                <div style={{ fontSize: 11, color: '#b45309', marginBottom: 6 }}>⭐ Dates beyond 30 days require VIP to book</div>
+                <button onClick={() => setView('membership')} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: '#d97706', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
+                  Go VIP →
+                </button>
               </div>
             )}
           </div>
         </>
       )}
 
+      {/* ── TIME SLOTS ── */}
       {step === 'time' && day && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ fontWeight: 800, fontSize: 16, color: '#1e293b' }}>{MONTH_NAMES[mo]} {day} — Pick a time</div>
@@ -267,6 +312,7 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
         </div>
       )}
 
+      {/* ── BOOKING FORM ── */}
       {step === 'form' && (
         <div style={{ background: '#fff', borderRadius: 16, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
           <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>Book your slot</div>
@@ -297,6 +343,7 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
         </div>
       )}
 
+      {/* ── BID / WAITLIST ── */}
       {step === 'bid' && (() => {
         const existing = getBookedEntry(hour);
         return (
