@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { SERVICES, HOURS, MONTH_NAMES, BOOKING_LIMIT } from '../lib/constants';
 import { toKey, fmtTime, getDays, getFirst, dayStatus } from '../lib/utils';
-import { navBtn, primaryBtn, ghostBtn, inputStyle, Badge } from './UI';
+import { navBtn, primaryBtn, ghostBtn, inputStyle } from './UI';
 
-export default function ClientView({ bookings, setBookings, blocked, toast, userPlan, setView }) {
+export default function ClientView({ bookings, setBookings, blocked, toast, userPlan, setView, points }) {
   const today = new Date();
   const [yr, setYr]   = useState(today.getFullYear());
   const [mo, setMo]   = useState(today.getMonth());
@@ -14,6 +14,8 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
   const [form, setForm]     = useState({ name: '', phone: '', note: '', payment: 'cash' });
   const [bidAmt, setBidAmt] = useState('');
   const [isBid, setIsBid]   = useState(false);
+  const [lookupPhone, setLookupPhone] = useState('');
+  const [showLookup, setShowLookup]   = useState(false);
 
   const svc      = SERVICES.find(s => s.id === svcId);
   const key      = day ? toKey(yr, mo, day) : null;
@@ -30,7 +32,6 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
   }
 
   function isDayVisible(y, m, d) {
-    // Free users see colors only within 30 days, VIP sees everything
     if (userPlan === 'vip') return true;
     const date = new Date(y, m, d);
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -48,8 +49,14 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
     return daySlots.find(b => b.hour === h && b.status !== 'cancelled');
   }
 
+  function getCustomerPoints(phone) {
+    if (!phone) return null;
+    const clean = phone.replace(/\D/g, '');
+    return points?.[clean] || null;
+  }
+
   function submit() {
-    if (!form.name.trim()) return;
+    if (!form.name.trim() || !form.phone.trim()) return;
     const entry = {
       clientName: form.name, phone: form.phone, note: form.note,
       serviceId: svcId, hour, price: svc?.basePrice || 20,
@@ -63,6 +70,7 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
     const amt = parseFloat(bidAmt);
     const existing = getBookedEntry(hour);
     if (!amt || amt <= (existing?.price || 0)) { toast('Bid must be higher than current price'); return; }
+    if (!form.name.trim() || !form.phone.trim()) { toast('Name and phone required'); return; }
     const entry = {
       clientName: form.name, phone: form.phone, note: form.note,
       serviceId: svcId, hour, price: amt,
@@ -74,7 +82,7 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
   }
 
   function joinWaitlist() {
-    if (!form.name.trim()) { toast('Enter your name first'); return; }
+    if (!form.name.trim() || !form.phone.trim()) { toast('Name and phone required'); return; }
     const entry = {
       clientName: form.name, phone: form.phone, note: '',
       serviceId: svcId, hour, price: svc?.basePrice || 20,
@@ -94,6 +102,9 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
   const prevMo = () => { if (mo === 0) { setYr(y => y - 1); setMo(11); } else setMo(m => m - 1); setDay(null); };
   const nextMo = () => { if (mo === 11) { setYr(y => y + 1); setMo(0); } else setMo(m => m + 1); setDay(null); };
 
+  const customerPts = getCustomerPoints(form.phone);
+
+  // ── DONE ──
   if (step === 'done') return (
     <div style={{ textAlign: 'center', padding: '50px 20px' }}>
       <div style={{ fontSize: 64, marginBottom: 16 }}>{isBid ? '💰' : '✅'}</div>
@@ -102,6 +113,20 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
       <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 20 }}>
         {isBid ? 'Lou will review your offer and respond soon.' : 'Lou will confirm your booking shortly.'}
       </div>
+
+      {/* Points display on confirmation */}
+      {getCustomerPoints(form.phone) && (
+        <div style={{ background: 'linear-gradient(135deg, #111827, #1e3a5f)', borderRadius: 14, padding: 16, marginBottom: 16, textAlign: 'left' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#fbbf24', letterSpacing: 2, marginBottom: 4 }}>YOUR LOYALTY POINTS</div>
+          <div style={{ fontSize: 36, fontWeight: 900, color: '#fff', marginBottom: 4 }}>{getCustomerPoints(form.phone).total}</div>
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>
+            {getCustomerPoints(form.phone).total >= 1000
+              ? '🎉 You have enough for $100 off a ride! Contact Lou to redeem.'
+              : `${1000 - getCustomerPoints(form.phone).total} more points until $100 off a ride`}
+          </div>
+        </div>
+      )}
+
       <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 14, padding: 16, marginBottom: 20, textAlign: 'left' }}>
         <div style={{ fontWeight: 700, fontSize: 14, color: '#1e293b', marginBottom: 8 }}>💰 Payment</div>
         {form.payment === 'venmo' ? (
@@ -152,30 +177,62 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
                     if (locked) { toast('⭐ AC Filters is a VIP member perk. Upgrade to book.'); return; }
                     setSvcId(s.id); setStep('calendar');
                   }}
-                  style={{
-                    padding: '16px 12px', borderRadius: 14, cursor: locked ? 'default' : 'pointer',
-                    border: `2px solid ${locked ? '#e2e8f0' : s.color + '30'}`,
-                    background: locked ? '#f8fafc' : '#fff',
-                    display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)', textAlign: 'left',
-                    opacity: locked ? 0.75 : 1, position: 'relative', overflow: 'hidden',
-                  }}>
-                  {locked && (
-                    <div style={{ position: 'absolute', top: 8, right: 8, background: 'linear-gradient(135deg,#d97706,#f59e0b)', color: '#fff', fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 20 }}>⭐ VIP</div>
-                  )}
+                  style={{ padding: '16px 12px', borderRadius: 14, cursor: locked ? 'default' : 'pointer', border: `2px solid ${locked ? '#e2e8f0' : s.color + '30'}`, background: locked ? '#f8fafc' : '#fff', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', textAlign: 'left', opacity: locked ? 0.75 : 1, position: 'relative', overflow: 'hidden' }}>
+                  {locked && <div style={{ position: 'absolute', top: 8, right: 8, background: 'linear-gradient(135deg,#d97706,#f59e0b)', color: '#fff', fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 20 }}>⭐ VIP</div>}
                   <span style={{ fontSize: 26, filter: locked ? 'grayscale(0.5)' : 'none' }}>{s.icon}</span>
                   <span style={{ fontWeight: 800, fontSize: 14, color: locked ? '#94a3b8' : '#1e293b' }}>{s.label}</span>
                   <span style={{ fontSize: 11, color: '#94a3b8' }}>{s.desc}</span>
-                  {locked
-                    ? <span style={{ fontSize: 11, fontWeight: 700, color: '#d97706' }}>VIP only</span>
-                    : <span style={{ fontSize: 12, fontWeight: 700, color: s.color }}>From ${s.basePrice}</span>
-                  }
+                  {locked ? <span style={{ fontSize: 11, fontWeight: 700, color: '#d97706' }}>VIP only</span> : <span style={{ fontSize: 12, fontWeight: 700, color: s.color }}>From ${s.basePrice}</span>}
                 </button>
               );
             })}
           </div>
 
-          {/* Availability teaser with View Calendar */}
+          {/* Points lookup */}
+          <div style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showLookup ? 12 : 0 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>⭐ Check My Points</div>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>1000 pts = $100 off a ride</div>
+              </div>
+              <button onClick={() => setShowLookup(s => !s)} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                {showLookup ? 'Close' : 'Check'}
+              </button>
+            </div>
+            {showLookup && (
+              <div>
+                <input
+                  placeholder="Enter your phone number"
+                  value={lookupPhone}
+                  onChange={e => setLookupPhone(e.target.value)}
+                  style={{ ...inputStyle, marginBottom: 10 }}
+                />
+                {lookupPhone.replace(/\D/g,'').length >= 10 && (
+                  (() => {
+                    const result = getCustomerPoints(lookupPhone);
+                    return result ? (
+                      <div style={{ background: 'linear-gradient(135deg, #111827, #1e3a5f)', borderRadius: 12, padding: 14 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#fbbf24', letterSpacing: 1, marginBottom: 4 }}>YOUR POINTS</div>
+                        <div style={{ fontSize: 40, fontWeight: 900, color: '#fff', marginBottom: 4 }}>{result.total}</div>
+                        <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                          {result.total >= 1000
+                            ? '🎉 Eligible for $100 off! Text Lou to redeem.'
+                            : `${1000 - result.total} more until $100 off a ride`}
+                        </div>
+                        <div style={{ marginTop: 10, background: '#ffffff20', borderRadius: 8, height: 6, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', borderRadius: 8, background: 'linear-gradient(90deg,#fbbf24,#f59e0b)', width: `${Math.min((result.total / 1000) * 100, 100)}%` }} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 13, color: '#94a3b8', textAlign: 'center', padding: '8px 0' }}>No points found for this number</div>
+                    );
+                  })()
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* View Calendar */}
           <div style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Availability at a glance</div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -212,8 +269,6 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
               <span style={{ fontWeight: 800, fontSize: 16 }}>{MONTH_NAMES[mo]} {yr}</span>
               <button onClick={nextMo} style={navBtn}>›</button>
             </div>
-
-            {/* Calendar grid with color dots for visible days */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 3 }}>
               {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
                 <div key={d} style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, textAlign: 'center', paddingBottom: 6 }}>{d}</div>
@@ -235,17 +290,8 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
                       if (!bookable) { toast('⭐ Upgrade to VIP to book this date'); return; }
                       setDay(d); setStep('time'); setHour(null);
                     }}
-                    style={{
-                      padding: '7px 0 5px', borderRadius: 10, textAlign: 'center',
-                      cursor: (!isPast && bookable) ? 'pointer' : 'default',
-                      background: sel ? '#111827' : isT ? '#f0f9ff' : 'transparent',
-                      color: sel ? '#fff' : (isPast || !visible) ? '#cbd5e1' : '#1e293b',
-                      fontWeight: sel ? 800 : isT ? 700 : 400,
-                      fontSize: 13,
-                      opacity: isPast ? 0.3 : 1,
-                    }}>
+                    style={{ padding: '7px 0 5px', borderRadius: 10, textAlign: 'center', cursor: (!isPast && bookable) ? 'pointer' : 'default', background: sel ? '#111827' : isT ? '#f0f9ff' : 'transparent', color: sel ? '#fff' : (isPast || !visible) ? '#cbd5e1' : '#1e293b', fontWeight: sel ? 800 : isT ? 700 : 400, fontSize: 13, opacity: isPast ? 0.3 : 1 }}>
                     {d}
-                    {/* Show color dot only for visible days */}
                     {visible && !isPast && st && (
                       <div style={{ display: 'flex', justifyContent: 'center', marginTop: 3 }}>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: sel ? '#fff' : st.dot, display: 'block' }} />
@@ -255,8 +301,6 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
                 );
               })}
             </div>
-
-            {/* Legend */}
             <div style={{ display: 'flex', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
               {[['#22c55e','Open'],['#facc15','Filling'],['#fb923c','Busy'],['#ef4444','Full']].map(([c,l]) => (
                 <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -265,14 +309,10 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
                 </div>
               ))}
             </div>
-
-            {/* VIP nudge below legend */}
             {userPlan !== 'vip' && (
               <div style={{ marginTop: 12, padding: '10px 12px', background: '#fffbeb', borderRadius: 8, border: '1px solid #fde68a' }}>
                 <div style={{ fontSize: 11, color: '#b45309', marginBottom: 6 }}>⭐ Dates beyond 30 days require VIP to book</div>
-                <button onClick={() => setView('membership')} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: '#d97706', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
-                  Go VIP →
-                </button>
+                <button onClick={() => setView('membership')} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: '#d97706', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>Go VIP →</button>
               </div>
             )}
           </div>
@@ -291,14 +331,7 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
               return (
                 <button key={h} disabled={status === 'blocked'}
                   onClick={() => { setHour(h); if (status === 'booked') setStep('bid'); else { setIsBid(false); setStep('form'); } }}
-                  style={{
-                    padding: '12px 10px', borderRadius: 12,
-                    border: `2px solid ${status === 'blocked' ? '#e2e8f0' : status === 'booked' ? '#fde68a' : '#e2e8f0'}`,
-                    background: status === 'blocked' ? '#f8fafc' : status === 'booked' ? '#fffbeb' : '#fff',
-                    cursor: status === 'blocked' ? 'not-allowed' : 'pointer',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-                    opacity: status === 'blocked' ? 0.4 : 1,
-                  }}>
+                  style={{ padding: '12px 10px', borderRadius: 12, border: `2px solid ${status === 'blocked' ? '#e2e8f0' : status === 'booked' ? '#fde68a' : '#e2e8f0'}`, background: status === 'blocked' ? '#f8fafc' : status === 'booked' ? '#fffbeb' : '#fff', cursor: status === 'blocked' ? 'not-allowed' : 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, opacity: status === 'blocked' ? 0.4 : 1 }}>
                   <span style={{ fontWeight: 700, fontSize: 14, color: status === 'blocked' ? '#cbd5e1' : status === 'booked' ? '#b45309' : '#1e293b' }}>{fmtTime(h)}</span>
                   {status === 'booked'  && <span style={{ fontSize: 10, color: '#b45309', fontWeight: 700 }}>BOOKED · Outbid?</span>}
                   {status === 'blocked' && <span style={{ fontSize: 10, color: '#94a3b8' }}>Unavailable</span>}
@@ -322,7 +355,14 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <input placeholder="Your name *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} />
-            <input placeholder="Phone number" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} style={inputStyle} />
+            <input placeholder="Phone number *" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} style={inputStyle} />
+            {/* Show points if phone entered */}
+            {form.phone.replace(/\D/g,'').length >= 10 && customerPts && (
+              <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '8px 12px', border: '1px solid #bbf7d0' }}>
+                <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>⭐ You have {customerPts.total} loyalty points</div>
+                <div style={{ fontSize: 11, color: '#64748b' }}>{customerPts.total >= 1000 ? 'Eligible for $100 off!' : `${1000 - customerPts.total} more until $100 off`}</div>
+              </div>
+            )}
             <textarea placeholder="Any notes or details..." value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
             <div style={{ fontWeight: 700, fontSize: 13, color: '#1e293b' }}>How will you pay?</div>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -338,7 +378,10 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
             <button onClick={() => setStep('time')} style={ghostBtn}>Back</button>
-            <button onClick={submit} disabled={!form.name.trim()} style={{ ...primaryBtn, flex: 1, opacity: form.name.trim() ? 1 : 0.5 }}>Send Request →</button>
+            <button onClick={submit} disabled={!form.name.trim() || !form.phone.trim()}
+              style={{ ...primaryBtn, flex: 1, opacity: form.name.trim() && form.phone.trim() ? 1 : 0.5 }}>
+              Send Request →
+            </button>
           </div>
         </div>
       )}
@@ -355,7 +398,7 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <input placeholder="Your name *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} />
-              <input placeholder="Phone number" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} style={inputStyle} />
+              <input placeholder="Phone number *" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} style={inputStyle} />
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontWeight: 700 }}>$</span>
                 <input type="number" placeholder={`More than $${existing?.price || 0}`} value={bidAmt} onChange={e => setBidAmt(e.target.value)} style={{ ...inputStyle, paddingLeft: 26 }} />
@@ -363,8 +406,8 @@ export default function ClientView({ bookings, setBookings, blocked, toast, user
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
               <button onClick={() => setStep('time')} style={ghostBtn}>Back</button>
-              <button onClick={submitBid} disabled={!form.name.trim() || !bidAmt}
-                style={{ ...primaryBtn, flex: 1, background: '#d97706', opacity: form.name.trim() && bidAmt ? 1 : 0.5 }}>
+              <button onClick={submitBid} disabled={!form.name.trim() || !form.phone.trim() || !bidAmt}
+                style={{ ...primaryBtn, flex: 1, background: '#d97706', opacity: form.name.trim() && form.phone.trim() && bidAmt ? 1 : 0.5 }}>
                 💰 Submit Bid
               </button>
             </div>
